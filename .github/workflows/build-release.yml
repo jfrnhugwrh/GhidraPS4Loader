@@ -1,0 +1,96 @@
+name: Build and release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # This loader uses the Ghidra 9.0 API. Upgrade the source before changing this.
+  GHIDRA_TAG: Ghidra_9.0.4_build
+  GHIDRA_ARCHIVE: ghidra_9.0.4_PUBLIC_20190516.zip
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '5.0'
+
+      - name: Download Ghidra
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$GHIDRA_TAG" \
+            --repo NationalSecurityAgency/ghidra \
+            --pattern "$GHIDRA_ARCHIVE" \
+            --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/$GHIDRA_ARCHIVE" -d "$RUNNER_TEMP/ghidra"
+          echo "GHIDRA_INSTALL_DIR=$RUNNER_TEMP/ghidra/${GHIDRA_ARCHIVE%_20190516.zip}" >> "$GITHUB_ENV"
+
+      - name: Build extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ghidra 9.0 packages the project directory. Stage only extension files
+          # so Git metadata and workflow files cannot end up in the release ZIP.
+          project="$RUNNER_TEMP/GhidraPS4Loader"
+          mkdir -p "$project"
+          cp -R build.gradle extension.properties Module.manifest README.md data src "$project/"
+          gradle --no-daemon -p "$project" buildExtension
+          mkdir -p dist
+          cp "$project"/dist/*.zip dist/
+          unzip -t dist/*.zip
+
+      - name: Upload extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: GhidraPS4Loader-ghidra-9.0.4
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download extension
+        uses: actions/download-artifact@v4
+        with:
+          name: GhidraPS4Loader-ghidra-9.0.4
+          path: dist
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag \
+              --title "$RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" dist/*.zip --clobber
