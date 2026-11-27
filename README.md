@@ -1,19 +1,21 @@
 ## Ghidra PS4 Loader by golden
 
 This is a simple module for Ghidra to support loading PlayStation 4 ELF files. 
-Builds are available as workflow artifacts in the **Actions** tab. Tagged versions are published as extension ZIPs in the **Releases** tab.
+Builds are available as workflow artifacts in the **Actions** tab. Successful builds on `master` are also published automatically as development prereleases with extension ZIPs in the **Releases** tab.
 
 #### Automated builds and releases
 The GitHub Actions workflow builds on pushes, pull requests, and manual runs. It uses **Ghidra 9.0.4, Java 11, and Gradle 5.0** to match this loader's legacy Ghidra APIs; the resulting extension is not intended for current Ghidra releases.
 
-To publish a release after the workflow is on GitHub, push a version tag pointing to the commit you want to release:
+Every successful push to `master` publishes a development prerelease tagged `build-<run-id>`. You can also select **Run workflow** on `master` in the Actions tab to publish one without pushing a commit. These prereleases do not replace the latest stable release.
+
+To publish a regular release instead, push a version tag pointing to the commit you want to release:
 
 ```sh
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-After a successful build, the workflow creates a GitHub Release with generated notes and attaches the ZIP from `dist`. Re-running a tag build replaces the matching asset. Branch builds and manual runs only upload Actions artifacts; they do not publish releases. No additional secrets are required: publishing uses the repository's built-in `GITHUB_TOKEN`.
+After a successful eligible build, the workflow creates a GitHub Release with generated notes and attaches the ZIP from `dist`. Re-running the same workflow run replaces the matching asset. Pull requests, pushes to other branches, and manual runs on other branches only upload Actions artifacts; they do not publish releases. No additional secrets are required: publishing uses the repository's built-in `GITHUB_TOKEN`.
 
 #### Installation
 0. Build with gradle, find the zip file in `dist` folder

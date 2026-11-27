@@ -77,7 +77,10 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -93,12 +96,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          BUILD_REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          BUILD_SHA: ${{ github.sha }}
+          BUILD_RUN_ID: ${{ github.run_id }}
         shell: bash
         run: |
           set -euo pipefail
-          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag \
-              --title "$RELEASE_TAG" --generate-notes
+          if [[ "$BUILD_REF" == refs/tags/v* ]]; then
+            release_tag="$REF_NAME"
+            release_title="$REF_NAME"
+            release_args=(--verify-tag)
+          else
+            # A unique tag per run preserves history and makes reruns idempotent.
+            release_tag="build-$BUILD_RUN_ID"
+            release_title="Development build $BUILD_RUN_ID"
+            release_args=(--target "$BUILD_SHA" --prerelease --latest=false)
           fi
-          gh release upload "$RELEASE_TAG" dist/*.zip --clobber
+          if ! gh release view "$release_tag" > /dev/null 2>&1; then
+            gh release create "$release_tag" "${release_args[@]}" \
+              --title "$release_title" --generate-notes
+          fi
+          gh release upload "$release_tag" dist/*.zip --clobber
